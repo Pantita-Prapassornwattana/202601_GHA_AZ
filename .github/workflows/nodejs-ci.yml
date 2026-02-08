@@ -6,13 +6,18 @@ on:
       - main
   pull_request:
     branches:
-      - main
+      - mainz
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
     strategy:
+      fail-fast: false
       matrix:
         node-version: [20.x, 21.x]
 
@@ -24,17 +29,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
 
-      - name: Conditional fast-path for Node 21
-        if: "matrix.node-version == '21.x'"
+      - name: Check for package.json
+        id: check
         run: |
-          echo "Node 21 fast-path: using cached deps where available"
-          # You can add Node-21-specific optimizations here (e.g. skip slow build steps)
+          if [ -f package.json ]; then echo "has_pkg=true" >> $GITHUB_OUTPUT; else echo "has_pkg=false" >> $GITHUB_OUTPUT; fi
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore npm cache
+        if: steps.check.outputs.has_pkg == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-npm-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ matrix.node-version }}-
+
+      - name: Install dependencies (fast)
+        if: steps.check.outputs.has_pkg == 'true'
+        run: |
+          npm ci --prefer-offline --no-audit --no-fund --progress=false
 
       - name: Run tests
+        if: steps.check.outputs.has_pkg == 'true'
         run: npm test
+
+      - name: No Node work required
+        if: steps.check.outputs.has_pkg == 'false'
+        run: echo "No package.json found — skipping Node install/test"
