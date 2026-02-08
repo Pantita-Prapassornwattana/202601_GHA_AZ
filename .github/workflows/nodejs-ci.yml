@@ -25,6 +25,13 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Conditional fast-path for Node 21
+        if: "matrix.node-version == '21.x'"
+        run: |
+          echo "Node 21 fast-path: using cached deps where available"
+          # You can add Node-21-specific optimizations here (e.g. skip slow build steps)
 
       - name: Install dependencies
         run: npm ci
